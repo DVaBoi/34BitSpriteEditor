@@ -43,14 +43,37 @@
       border: 1px solid #444;
       border-radius: 4px;
     }
-    #palette, #layers {
+
+    /* New main container: horizontal flex with palette, canvas, layers */
+    #main-container {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 20px;
+      padding: 10px;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    #palette {
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
+      width: 140px;
       justify-content: center;
-      margin-top: 10px;
-      max-width: 680px;
+      margin-top: 0;
     }
+
+    #layers {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 40px;
+      justify-content: flex-start;
+      align-items: center;
+      margin-top: 0;
+    }
+
     .color, .layer-btn {
       width: 20px;
       height: 20px;
@@ -59,12 +82,12 @@
       box-sizing: border-box;
       border-radius: 4px;
       transition: border-color 0.15s ease;
+      user-select: none;
     }
     .color.selected, .layer-btn.selected {
       border-color: yellow;
     }
     #palette .color {
-      /* show checkerboard for transparent */
       background-origin: border-box;
       background-clip: content-box, border-box;
     }
@@ -76,9 +99,12 @@
     <button onclick="saveImage()">Save PNG</button>
     <input type="file" id="loadfile" accept="image/png" onchange="loadImage(event)" />
   </div>
-  <canvas id="editor" width="640" height="640"></canvas>
-  <div id="palette" title="Shift+Click to set right-click color"></div>
-  <div id="layers" title="Select current layer"></div>
+
+  <div id="main-container">
+    <div id="palette" title="Shift+Click to set right-click color"></div>
+    <canvas id="editor" width="640" height="640"></canvas>
+    <div id="layers" title="Select current layer"></div>
+  </div>
 
 <script>
   const GRID_SIZE = 32;
@@ -91,7 +117,6 @@
   const layersDiv = document.getElementById('layers');
 
   const TRANSPARENT = [0, 0, 0, 0];
-  // Initialize layers with transparent pixels
   let layers = Array.from({length: LAYER_COUNT}, () =>
     Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill().map(() => TRANSPARENT.slice()))
   );
@@ -102,7 +127,6 @@
   let mouseDown = false;
   let isRightClick = false;
 
-  // 216 color palette + transparent
   const palette = [TRANSPARENT, ...Array.from({length: 216}, (_, i) => {
     const r = (Math.floor(i / 36) % 6) * 51;
     const g = (Math.floor(i / 6) % 6) * 51;
@@ -110,7 +134,6 @@
     return [r, g, b, 255];
   })];
 
-  // Draw checkerboard pattern (for transparency)
   function drawChecker(x, y) {
     const tile = PIXEL_SIZE / 2;
     for (let dy = 0; dy < 2; dy++) {
@@ -128,7 +151,6 @@
         const py = y * PIXEL_SIZE;
         drawChecker(px, py);
 
-        // Draw topmost non-transparent pixel from all layers (from bottom to top)
         let drawn = false;
         for (let i = 0; i < LAYER_COUNT; i++) {
           const c = layers[i][y][x];
@@ -168,7 +190,6 @@
   canvas.addEventListener('mouseup', () => mouseDown = false);
   canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-  // Helper function to compare colors arrays
   function colorsEqual(a, b) {
     return a.length === b.length && a.every((v, i) => v === b[i]);
   }
@@ -214,7 +235,6 @@
     const imgData = outCtx.createImageData(GRID_SIZE, GRID_SIZE);
     for (let y = 0; y < GRID_SIZE; y++) {
       for (let x = 0; x < GRID_SIZE; x++) {
-        // Find topmost non-transparent pixel from layers top to bottom
         let finalColor = TRANSPARENT;
         for (let l = LAYER_COUNT - 1; l >= 0; l--) {
           const c = layers[l][y][x];
