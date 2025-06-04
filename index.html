@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MiskSprite Editor Deluxe Web</title>
+  <style>
+    body {
+      background: #1e1e1e;
+      color: white;
+      font-family: sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      user-select: none;
+    }
+    canvas {
+      background: #2a2a2a;
+      image-rendering: pixelated;
+      border: 4px solid #000;
+      margin-top: 10px;
+      cursor: crosshair;
+    }
+    #ui {
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      max-width: 680px;
+    }
+    #filename {
+      font-size: 16px;
+      padding: 4px;
+      width: 200px;
+      background: #222;
+      color: white;
+      border: 1px solid #444;
+      border-radius: 4px;
+    }
+    #palette, #layers {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-top: 10px;
+      max-width: 680px;
+    }
+    .color, .layer-btn {
+      width: 20px;
+      height: 20px;
+      border: 2px solid #333;
+      cursor: pointer;
+      box-sizing: border-box;
+      border-radius: 4px;
+      transition: border-color 0.15s ease;
+    }
+    .color.selected, .layer-btn.selected {
+      border-color: yellow;
+    }
+    #palette .color {
+      /* show checkerboard for transparent */
+      background-origin: border-box;
+      background-clip: content-box, border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <input type="text" id="filename" placeholder="filename.png" />
+    <button onclick="saveImage()">Save PNG</button>
+    <input type="file" id="loadfile" accept="image/png" onchange="loadImage(event)" />
+  </div>
+  <canvas id="editor" width="640" height="640"></canvas>
+  <div id="palette" title="Shift+Click to set right-click color"></div>
+  <div id="layers" title="Select current layer"></div>
+
+<script>
+  const GRID_SIZE = 32;
+  const PIXEL_SIZE = 20;
+  const LAYER_COUNT = 16;
+
+  const canvas = document.getElementById('editor');
+  const ctx = canvas.getContext('2d');
+  const paletteDiv = document.getElementById('palette');
+  const layersDiv = document.getElementById('layers');
+
+  const TRANSPARENT = [0, 0, 0, 0];
+  // Initialize layers with transparent pixels
+  let layers = Array.from({length: LAYER_COUNT}, () =>
+    Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill().map(() => TRANSPARENT.slice()))
+  );
+
+  let currentLayer = 0;
+  let leftColor = [0, 0, 0, 255];
+  let rightColor = TRANSPARENT.slice();
+  let mouseDown = false;
+  let isRightClick = false;
+
+  // 216 color palette + transparent
+  const palette = [TRANSPARENT, ...Array.from({length: 216}, (_, i) => {
+    const r = (Math.floor(i / 36) % 6) * 51;
+    const g = (Math.floor(i / 6) % 6) * 51;
+    const b = (i % 6) * 51;
+    return [r, g, b, 255];
+  })];
+
+  // Draw checkerboard pattern (for transparency)
+  function drawChecker(x, y) {
+    const tile = PIXEL_SIZE / 2;
+    for (let dy = 0; dy < 2; dy++) {
+      for (let dx = 0; dx < 2; dx++) {
+        ctx.fillStyle = (dx + dy) % 2 ? '#ccc' : '#eee';
+        ctx.fillRect(x + dx * tile, y + dy * tile, tile, tile);
+      }
+    }
+  }
+
+  function drawGrid() {
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        const px = x * PIXEL_SIZE;
+        const py = y * PIXEL_SIZE;
+        drawChecker(px, py);
+
+        // Draw topmost non-transparent pixel from all layers (from bottom to top)
+        let drawn = false;
+        for (let i = 0; i < LAYER_COUNT; i++) {
+          const c = layers[i][y][x];
+          if (c[3] > 0) {
+            ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${c[3]/255})`;
+            ctx.fillRect(px, py, PIXEL_SIZE, PIXEL_SIZE);
+            drawn = true;
+          }
+        }
+        ctx.strokeStyle = '#333';
+        ctx.strokeRect(px, py, PIXEL_SIZE, PIXEL_SIZE);
+      }
+    }
+  }
+
+  function setPixel(e) {
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) / PIXEL_SIZE);
+    const y = Math.floor((e.clientY - rect.top) / PIXEL_SIZE);
+    if (x >= 0 && y >= 0 && x < GRID_SIZE && y < GRID_SIZE) {
+      const color = isRightClick ? rightColor : leftColor;
+      layers[currentLayer][y][x] = color.slice();
+      drawGrid();
+    }
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    mouseDown = true;
+    isRightClick = e.button === 2;
+    setPixel(e);
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    if (mouseDown) setPixel(e);
+  });
+
+  canvas.addEventListener('mouseup', () => mouseDown = false);
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Helper function to compare colors arrays
+  function colorsEqual(a, b) {
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+  }
+
+  function renderPalette() {
+    paletteDiv.innerHTML = '';
+    palette.forEach(color => {
+      const div = document.createElement('div');
+      div.className = 'color';
+      div.style.background = `rgba(${color[0]},${color[1]},${color[2]},${color[3] / 255})`;
+      div.onclick = e => {
+        if (e.shiftKey) rightColor = color;
+        else leftColor = color;
+        renderPalette();
+      };
+      if (colorsEqual(color, leftColor) || colorsEqual(color, rightColor)) {
+        div.classList.add('selected');
+      }
+      paletteDiv.appendChild(div);
+    });
+  }
+
+  function renderLayers() {
+    layersDiv.innerHTML = '';
+    for (let i = 0; i < LAYER_COUNT; i++) {
+      const btn = document.createElement('div');
+      btn.className = 'layer-btn';
+      btn.textContent = i + 1;
+      if (i === currentLayer) btn.classList.add('selected');
+      btn.onclick = () => {
+        currentLayer = i;
+        renderLayers();
+      };
+      layersDiv.appendChild(btn);
+    }
+  }
+
+  function saveImage() {
+    const canvasOut = document.createElement('canvas');
+    canvasOut.width = GRID_SIZE;
+    canvasOut.height = GRID_SIZE;
+    const outCtx = canvasOut.getContext('2d');
+    const imgData = outCtx.createImageData(GRID_SIZE, GRID_SIZE);
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        // Find topmost non-transparent pixel from layers top to bottom
+        let finalColor = TRANSPARENT;
+        for (let l = LAYER_COUNT - 1; l >= 0; l--) {
+          const c = layers[l][y][x];
+          if (c[3] > 0) {
+            finalColor = c;
+            break;
+          }
+        }
+        const idx = (y * GRID_SIZE + x) * 4;
+        imgData.data[idx] = finalColor[0];
+        imgData.data[idx + 1] = finalColor[1];
+        imgData.data[idx + 2] = finalColor[2];
+        imgData.data[idx + 3] = finalColor[3];
+      }
+    }
+    outCtx.putImageData(imgData, 0, 0);
+    const a = document.createElement('a');
+    a.download = document.getElementById('filename').value || 'sprite.png';
+    a.href = canvasOut.toDataURL();
+    a.click();
+  }
+
+  function loadImage(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const img = new Image();
+    img.onload = () => {
+      const temp = document.createElement('canvas');
+      temp.width = GRID_SIZE;
+      temp.height = GRID_SIZE;
+      const tctx = temp.getContext('2d');
+      tctx.drawImage(img, 0, 0, GRID_SIZE, GRID_SIZE);
+      const data = tctx.getImageData(0, 0, GRID_SIZE, GRID_SIZE).data;
+      for (let y = 0; y < GRID_SIZE; y++) {
+        for (let x = 0; x < GRID_SIZE; x++) {
+          const idx = (y * GRID_SIZE + x) * 4;
+          layers[0][y][x] = [
+            data[idx],
+            data[idx + 1],
+            data[idx + 2],
+            data[idx + 3]
+          ];
+        }
+      }
+      drawGrid();
+    };
+    img.src = URL.createObjectURL(file);
+  }
+
+  renderPalette();
+  renderLayers();
+  drawGrid();
+</script>
+</body>
+</html>
